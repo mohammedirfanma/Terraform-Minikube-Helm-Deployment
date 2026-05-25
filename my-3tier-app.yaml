@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: 3-tier-app
+  # This is the namespace where Argo CD itself lives
+  namespace: argocd 
+spec:
+  project: default
+  source:
+    # REPLACE with your actual Git repository URL
+    repoURL: 'https://github.com/mohammedirfanma/Terraform-Minikube-Helm-Deployment.git'
+    targetRevision: master
+    path: 3tier-app
+    helm:
+      # Tells Argo CD to use the values.yaml we updated earlier
+      valueFiles:
+        - values.yaml
+  destination:
+    # Points to your local Minikube cluster
+    server: 'https://kubernetes.default.svc'
+    # Fallback namespace (your Helm templates will override this)
+    namespace: default 
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Creates the fallback namespace if it doesn't exist
+      - CreateNamespace=true
