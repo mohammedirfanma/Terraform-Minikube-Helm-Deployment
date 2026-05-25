@@ -1,0 +1,17 @@
+backend:
+  image: myapp-backend:latest
+  replicas: 1
+
+web:
+  image: nginx:alpine
+  replicas: 1
+
+db:
+  image: mariadb:10.6
+
+ingress:
+  host: myapp.local
+
+secrets:
+  mysqlrootpassword: password
+  djangopassword: password1

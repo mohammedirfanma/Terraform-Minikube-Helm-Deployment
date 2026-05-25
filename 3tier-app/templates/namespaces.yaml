@@ -1,0 +1,14 @@
+# namespaces.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-tier
+  labels:
+    tier: web
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-tier
+  labels:
+    tier: data

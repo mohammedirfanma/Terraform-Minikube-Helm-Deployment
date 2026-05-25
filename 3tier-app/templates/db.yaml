@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: data-tier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:latest
+          env:
+            - name: MYSQL_DATABASE
+              value: blog_data
+            - name: MYSQL_USER
+              value: django1
+            - name: MYSQL_PASSWORD
+              value: {{ .Values.secrets.djangopassword }}
+            - name: MYSQL_ROOT_PASSWORD
+              value: {{ .Values.secrets.mysqlrootpassword }}
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: db-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: db-storage
+          persistentVolumeClaim:
+            claimName: mariadb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: data-tier
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - port: 3306
+  type: ClusterIP
