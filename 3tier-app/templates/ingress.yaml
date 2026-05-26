@@ -16,3 +16,17 @@ spec:
             name: web
             port:
               number: 80
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-ingress-to-web
+  namespace: web-tier
+spec:
+  endpointSelector:
+    matchLabels:
+      app: web # Replace with your frontend pod's label
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        "k8s:io.kubernetes.pod.namespace": kube-system
+        "k8s:app.kubernetes.io/name": cilium-envoy
