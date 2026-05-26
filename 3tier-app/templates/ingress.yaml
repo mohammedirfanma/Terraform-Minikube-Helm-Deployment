@@ -16,6 +16,7 @@ spec:
             name: web
             port:
               number: 80
+---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
@@ -24,7 +25,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: web # Replace with your frontend pod's label
+      app: web # Ensure this matches your frontend pod's label
   ingress:
   - fromEndpoints:
     - matchLabels:
