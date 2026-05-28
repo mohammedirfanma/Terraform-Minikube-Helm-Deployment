@@ -1,11 +1,15 @@
 apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: cilium
+spec:
+  controller: cilium.io/ingress-controller
+---
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: myapp-ingress
   namespace: web-tier
-  annotations:
-    # This explicit annotation forces Cilium's legacy engine to reconcile the resource
-    cilium.io/ingress.class: "cilium"
 spec:
   ingressClassName: cilium
   rules:
