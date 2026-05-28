@@ -77,7 +77,7 @@ metadata:
 spec:
   type: NodePort
   selector:
-    app.kubernetes.io/name: web # Matches your frontend deployment pods
+    app: web # Matches your frontend deployment pods
   ports:
     - name: http
       port: 80
