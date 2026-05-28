@@ -20,7 +20,7 @@ spec:
                   name: myapp_route
                   virtual_hosts:
                     - name: myapp_vhost
-                      domains: ["myapp.local", "myapp.local:9964"] # Catch both host forms
+                      domains: ["myapp.local", "myapp.local:9964"]
                       routes:
                         - match:
                             prefix: "/"
