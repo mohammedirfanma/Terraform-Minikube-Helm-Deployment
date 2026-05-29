@@ -10,6 +10,9 @@ kind: Ingress
 metadata:
   name: myapp-ingress
   namespace: web-tier
+  annotations:
+    # This tells Argo CD to consider the Ingress healthy even if the IP address field is empty
+    argocd.argoproj.io/healthoptions: IgnoreMissingValue
 spec:
   ingressClassName: cilium
   rules:
