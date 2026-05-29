@@ -4,25 +4,3 @@ metadata:
   name: cilium
 spec:
   controller: cilium.io/ingress-controller
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: myapp-ingress
-  namespace: web-tier
-  annotations:
-    # This tells Argo CD to consider the Ingress healthy even if the IP address field is empty
-    argocd.argoproj.io/healthoptions: IgnoreMissingValue
-spec:
-  ingressClassName: cilium
-  rules:
-  - host: myapp.local
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: web
-            port:
-              number: 80
