@@ -1,9 +1,3 @@
-apiVersion: networking.k8s.io/v1
-kind: IngressClass
-metadata:
-  name: cilium
-spec:
-  controller: cilium.io/ingress-controller
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -12,79 +6,108 @@ metadata:
   namespace: web-tier
 spec:
   description: "Zero-Trust: Deny all ingress and egress traffic by default"
-  endpointSelector: {} # An empty selector matches ALL pods in the namespace
+  endpointSelector: {} # Matches ALL pods in web-tier
   ingress:
     - {}
   egress:
     - {}
+
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-external-to-frontend
+  name: allow-dns-egress
   namespace: web-tier
 spec:
+  description: "Allow all pods in the namespace to query cluster CoreDNS"
+  endpointSelector: {} # Appended to all pods in the namespace
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: frontend-rules
+  namespace: web-tier
+spec:
+  description: "Frontend isolation rules"
   endpointSelector:
     matchLabels:
-      app: web # Targets your frontend pod
+      app: web
   ingress:
+    # Allow traffic from host machine browser via NodePort
     - fromEntities:
-        - world # Allows traffic originating outside the cluster (your laptop host)
+        - world 
       toPorts:
         - ports:
             - port: "80"
               protocol: TCP
+  egress:
+    # Allow frontend to send outgoing requests strictly to the backend pod
+    - toEndpoints:
+        - matchLabels:
+            app: backend
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-frontend-to-backend
+  name: backend-rules
   namespace: web-tier
 spec:
+  description: "Backend isolation rules"
   endpointSelector:
     matchLabels:
-      app: backend # Targets your Backend API pod
+      app: backend
   ingress:
+    # Only accept traffic coming from frontend
     - fromEndpoints:
         - matchLabels:
-            app: web # Only allows traffic if it carries the app=web identity
+            app: web
       toPorts:
         - ports:
-            - port: "8080" # Assuming your API listens on 8080
+            - port: "8080"
               protocol: TCP
+  egress:
+    # Allow backend to send outgoing requests strictly to MariaDB
+    - toEndpoints:
+        - matchLabels:
+            app: mariadb
+      toPorts:
+        - ports:
+            - port: "3306"
+              protocol: TCP
+
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-backend-to-mariadb
+  name: database-rules
   namespace: web-tier
 spec:
+  description: "Database isolation rules"
   endpointSelector:
     matchLabels:
-      app: mariadb # Targets your Database pod
+      app: mariadb
   ingress:
+    # Only accept database traffic coming from backend API
     - fromEndpoints:
         - matchLabels:
-            app: backend # Only allows traffic if it comes from the API tier
+            app: backend
       toPorts:
         - ports:
-            - port: "3306" # Standard MariaDB/MySQL port
+            - port: "3306"
               protocol: TCP
----
-apiVersion: "cilium.io/v2"
-kind: CiliumNetworkPolicy
-metadata:
-  name: allow-backend-to-mariadb
-  namespace: web-tier
-spec:
-  endpointSelector:
-    matchLabels:
-      app: mariadb # Targets your Database pod
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app: backend # Only allows traffic if it comes from the API tier
-      toPorts:
-        - ports:
-            - port: "3306" # Standard MariaDB/MySQL port
-              protocol: TCP
+  # Egress is omitted here, meaning MariaDB cannot initiate connections to anyone!
