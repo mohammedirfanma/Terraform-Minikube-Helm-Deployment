@@ -1,5 +1,5 @@
 backend:
-  image: myapp-backend:latest
+  image: myapp-backend:v2
   replicas: 1
 
 web:
