@@ -1,333 +1,141 @@
-# 🚀 3-Tier Application Deployment on AKS using Terraform & Helm
+Production-Grade 3-Tier Hardened Stack with GitOps & eBPF Observability
 
-This repository demonstrates how to provision an Azure Kubernetes Service (AKS) cluster using Terraform and deploy a 3-tier application using Helm.
+This repository contains the declarative configuration for a secure, highly-available 3-tier architecture deployed on Kubernetes (minikube). The project showcases real-world cloud-native engineering practices, emphasizing GitOps delivery workflows, kernel-level eBPF network isolation, and full-stack application monitoring.
 
----
+    [ Public Ingress / NodePort: 32080 ]
+                    │
+                    ▼
+          ┌───────────────────┐
+          │    web-tier       │
+          │  Nginx Frontend  │
+          └─────────┬─────────┘
+                    │  (eBPF Restricted Port 8000)
+                    ▼
+          ┌───────────────────┐
+          │    web-tier       │
+          │   Django API      │───[ Scraped via port 8000/metrics ]───┐
+          └─────────┬─────────┘                                       │
+                    │  (eBPF Restricted Port 3306)                    ▼
+                    ▼                                       ┌───────────────────┐
+          ┌───────────────────┐                             │  monitoring-tier  │
+          │    data-tier      │                             │ Prometheus &      │
+          │  MariaDB Database │                             │ Grafana (32300)   │
+          └───────────────────┘                             └───────────────────┘
 
-# 📌 Architecture Overview
+🚀 Key Features
 
-```text
-Terraform → Infrastructure Provisioning
-  ├── AKS Cluster
-  ├── Azure Container Registry (ACR)
-  └── Networking
+    GitOps Continuous Delivery: Managed entirely via Argo CD, ensuring that the state of the cluster matches this Git repository instantly and automatically heals from configuration drift.
 
-Helm → Application Deployment
-  ├── Web Tier (Nginx)
-  ├── Backend API (Custom Image)
-  ├── Database (MySQL/MariaDB)
-  ├── Ingress Controller
-  └── Secrets & Configurations
-```
+    eBPF-Powered Zero-Trust Security: Utilizes Cilium Network Policies (CiliumNetworkPolicy) interacting directly with the Linux kernel via eBPF. All traffic is blocked by default (default-deny-all), explicitly allowing only strict point-to-point pathways (Frontend ➔ Backend ➔ DB).
 
----
+    Deep Application Observability: Custom runtime monitoring using Prometheus to pull code-level performance metrics directly from the Django application layer using django-prometheus.
 
-# 🧰 Prerequisites
+    Visual Command Center: Automated provisioning of Grafana with a declarative Prometheus data source pre-configured to surface traffic metrics, error rates, database latencies, and system health.
 
-Ensure the following tools are installed:
+    Hardened Configurations: Pods operate under strict non-root security contexts (runAsNonRoot: true), resource quotas limits to mitigate DoS threats, and init-containers to manage database boot dependencies cleanly.
 
-* Azure CLI
-* Terraform
-* kubectl
-* Helm
-* Docker
+📂 Repository Structure
+Plaintext
 
-Login to Azure:
+├── backend.yaml       # Django API Deployment, Service, & Resource Quotas
+├── db.yaml            # MariaDB State deployment with Persistent Volume Claims
+├── web.yaml           # Nginx Reverse Proxy Deployment & ConfigMap mapping
+├── ingress.yaml       # Cilium L3/L4 Network Isolation Policies
+├── prometheus.yaml    # Prometheus Scraping Engines & Monitoring Config
+└── grafana.yaml       # Grafana Dashboard Provisioning & Auto-Datasource linking
 
-```bash
-az login
-```
+🛠️ Prerequisites
 
----
+Before executing the deployment, ensure your local workstation is equipped with the following toolchain:
 
-# 🏗️ Step 1: Provision AKS using Terraform
+    Linux Engine: Ubuntu 20.04 LTS / 22.04 LTS or newer
 
-## 1. Initialize Terraform
+    Hypervisor: Minikube (configured with docker/kvm2 driver)
 
-```bash
-terraform init
-```
+    Kubernetes Orchestrator: kubectl CLI installed matching cluster control-plane version
 
-## 2. Validate configuration
+    Version Control: git for tracking state and triggers
 
-```bash
-terraform validate
-```
+🔧 Installation & Deployment Guide
+1. Initialize Local Cluster with Cilium CNI
 
-## 3. Apply infrastructure
+Spin up a local node bypass mechanism and explicitly disable default basic networking configurations to let Cilium manage the cluster via eBPF kernel hooks:
+Bash
 
-```bash
-terraform apply
-```
+minikube start --network-plugin=cni --cni=cilium --memory=4096 --cpus=4
 
-Confirm with `yes` when prompted.
+Verify that the eBPF control plane is fully integrated:
+Bash
 
----
+kubectl get pods -n kube-system -l k8s-app=cilium
 
-## 4. Get AKS credentials
+2. Bootstrap Argo CD (GitOps Controller)
 
-```bash
-az aks get-credentials --resource-group <resource-group> --name <aks-cluster-name>
-```
+Deploy the GitOps agent engine into a dedicated management workspace namespace:
+Bash
 
-Verify cluster access:
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-```bash
-kubectl get nodes
-```
+To fetch your auto-generated initial dashboard admin password, extract and base64-decode the core secret:
+Bash
 
----
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
 
-# 📦 Step 2: Build & Push Backend Docker Image
+3. Build & Load the Backend Image (Minikube Local Registry)
 
-👉 Only the backend is a custom image. Web (Nginx) and DB use public images.
+When developing locally, Minikube uses an isolated Docker registry. To ensure your cluster pulls the correct local image without attempting to reach the public internet (which results in ErrImagePull), follow this strict build and tag workflow:
 
-## 1. Login to ACR
+    Point your terminal to Minikube's internal Docker engine:
+    Bash
 
-```bash
-az acr login --name <acr-name>
-```
+    eval $(minikube docker-env)
 
-## 2. Build backend image
+    Build and tag the backend image (always bump the version tag to force Kubernetes to recognize the new code):
+    Bash
 
-```bash
-docker build -t <acr-name>.azurecr.io/myapp-backend:latest ./backend
-```
+    docker build -t myapp-backend:v2 ./backend
 
-## 3. Push backend image
+    Update the GitOps manifest: Modify your backend.yaml to reference the new tag and instruct Kubernetes to trust the local cache.
+    YAML
 
-```bash
-docker push <acr-name>.azurecr.io/myapp-backend:latest
-```
+    # Inside backend.yaml
+    containers:
+      - name: backend
+        image: myapp-backend:v2       # <--- Ensure this matches your new tag
+        imagePullPolicy: IfNotPresent # <--- Prevents calling out to Docker Hub
 
----
+4. Sync the Infrastructure
 
-# 🌐 Step 3: Install Ingress Controller
+Commit the updated manifests and register this repository within your Argo CD application dashboard. Once hooked, Argo CD will provision your workloads across your custom environments (web-tier, data-tier, and monitoring).
+📊 Observability & Telemetry Verification
+1. Direct Metric Pipeline Testing
 
-```bash
-kubectl create namespace ingress-nginx
+Verify the backend container's structural ability to collect code performance statistics directly on port 8000/metrics by querying it internally from the running pod:
+Bash
 
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+kubectl exec -it deploy/backend -n web-tier -- sh -c "wget -S -O- http://localhost:8000/metrics"
 
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx
-```
+A successful connection bypass returns an HTTP 200 OK followed by rich exposition formats containing telemetry variables such as django_http_requests_total_by_method.
+2. Launching Visual Dashboards
 
-Check external IP:
+Access the pre-provisioned Grafana cluster visualizer exposed via NodePort configuration:
 
-```bash
-kubectl get svc -n ingress-nginx
-```
+    Retrieve your active cluster URL endpoint:
+    Bash
 
----
+    minikube service grafana -n monitoring --url
 
-# 🔐 Step 4: Configure Secrets (Helm)
+    Open the URL in your browser and use the default credentials: Username: admin / Password: admin.
 
-Secrets are managed via Helm templates.
+    To view real-time metrics, navigate to the Dashboard management window and import Community ID 17658 to automatically load the target visualizations for your application stack.
 
-## values.yaml
+🔒 Security Posture & Hardening Verification
 
-```yaml
-secrets:
-  mysqlrootpassword: yourpassword
-  djangoPassword: yourpassword
-```
+To validate your zero-trust architecture, you can test the explicit path-blocking enforced by Cilium's kernel-level eBPF firewalls.
 
-## templates/secret.yaml
+Attempting to run an unauthenticated database connection request directly from a frontend Nginx pod to the database will be instantly dropped at the kernel layer, bypassing standard iptables latency overloads:
+Bash
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: app-secret
-type: Opaque
-stringData:
-  DB_USER: {{ .Values.secrets.dbUser }}
-  DB_PASSWORD: {{ .Values.secrets.dbPassword }}
-```
-
----
-
-# ⚙️ Step 5: Helm Chart Setup
-
-## Create Helm chart
-
-```bash
-helm create 3tier-app
-```
-
-Clean default templates:
-
-```bash
-rm -rf 3tier-app/templates/*
-```
-
-## Add your Kubernetes manifests into:
-
-```text
-3tier-app/
-  Chart.yaml
-  values.yaml
-  templates/
-    backend.yaml
-    web.yaml
-    db.yaml
-    ingress.yaml
-    pvc.yaml
-    secret.yaml
-```
-
----
-
-## Use values in templates
-
-Example (backend):
-
-```yaml
-image: {{ .Values.backend.image }}
-replicas: {{ .Values.backend.replicas }}
-```
-
-## values.yaml (important update)
-
-```yaml
-backend:
-  image: <acr-name>.azurecr.io/myapp-backend:latest
-  replicas: 1
-
-web:
-  image: nginx:alpine
-
-db:
-  image: mariadb:10.6
-```
-
----
-
-# 🚀 Step 6: Deploy Application using Helm
-
-## Install application
-
-```bash
-helm install myapp ./3tier-app -n web-tier --create-namespace
-```
-
----
-
-## Upgrade application (after changes)
-
-```bash
-helm upgrade myapp ./3tier-app
-```
-
----
-
-## Uninstall application
-
-```bash
-helm uninstall myapp
-```
-
----
-
-# 🔍 Step 7: Verification
-
-## Check pods
-
-```bash
-kubectl get pods -A
-```
-
-## Check services
-
-```bash
-kubectl get svc -A
-```
-
-## Check ingress
-
-```bash
-kubectl get ingress -A
-```
-
----
-
-# 🌍 Step 8: Access Application
-
-1. Get Ingress external IP:
-
-```bash
-kubectl get svc -n ingress-nginx
-```
-
-2. Update your local `/etc/hosts`:
-
-```bash
-<EXTERNAL-IP> myapp.local
-```
-
-3. Open in browser:
-
-```text
-http://myapp.local
-```
-
----
-
-# 🔁 Redeployment Workflow
-
-Whenever you make changes:
-
-```bash
-helm upgrade myapp ./3tier-app
-```
-
-If backend image is updated:
-
-```bash
-docker build -t <acr-name>.azurecr.io/myapp-backend:latest ./backend
-docker push <acr-name>.azurecr.io/myapp-backend:latest
-helm upgrade myapp ./3tier-app
-```
-
-If secrets/configs changed:
-
-```bash
-kubectl rollout restart deployment backend -n web-tier
-kubectl rollout restart deployment web -n web-tier
-```
-
----
-
-# ⚠️ Important Notes
-
-* Only backend uses a custom Docker image
-* Web (Nginx) and DB use public images
-* Do NOT mix `kubectl apply` and Helm for same resources
-* Avoid committing secrets to Git
-* Ensure ACR is attached to AKS for image pulling
-
----
-
-# 📈 Future Improvements
-
-* CI/CD pipeline (GitHub Actions / Azure DevOps)
-* Azure Key Vault integration for secrets
-* TLS via cert-manager
-* Autoscaling (HPA)
-* Monitoring (Prometheus + Grafana)
-
----
-
-# ✅ Summary
-
-This setup provides:
-
-* Infrastructure as Code using Terraform
-* Helm-based Kubernetes deployments
-* Secure secret handling
-* Scalable 3-tier architecture on AKS
-
----
-
-Feel free to fork and enhance 🚀
+# This connection attempt will hang and timeout due to the zero-trust Cilium policies
+kubectl exec -it deploy/web -n web-tier -- nc -zv db.data-tier.svc.cluster.local 3306
