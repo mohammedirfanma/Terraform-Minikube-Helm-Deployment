@@ -42,7 +42,7 @@ spec:
             limits:
               memory: "512Mi"   # Max RAM allowed (Prevents OOM)
               cpu: "500m"
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command: ["sh", "-c"]
           args: ["python manage.py migrate && gunicorn myapp.wsgi:application --bind 0.0.0.0:8000"]
           env:
