@@ -1,3 +1,9 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: cilium
+spec:
+  controller: cilium.io/ingress-controller
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -11,7 +17,6 @@ spec:
     - {}
   egress:
     - {}
-
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -20,7 +25,7 @@ metadata:
   namespace: web-tier
 spec:
   description: "Allow all pods in the namespace to query cluster CoreDNS"
-  endpointSelector: {} # Appended to all pods in the namespace
+  endpointSelector: {} 
   egress:
     - toEndpoints:
         - matchLabels:
@@ -30,7 +35,6 @@ spec:
         - ports:
             - port: "53"
               protocol: UDP
-
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -51,15 +55,14 @@ spec:
             - port: "80"
               protocol: TCP
   egress:
-    # Allow frontend to send outgoing requests strictly to the backend pod
+    # Allow frontend to send outgoing requests strictly to the backend pod on port 8000
     - toEndpoints:
         - matchLabels:
             app: backend
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8000"
               protocol: TCP
-
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
@@ -78,36 +81,36 @@ spec:
             app: web
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8000"
               protocol: TCP
   egress:
-    # Allow backend to send outgoing requests strictly to MariaDB
+    # Cross the namespace boundary to allow backend to talk to MariaDB in data-tier
     - toEndpoints:
         - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": data-tier
             app: mariadb
       toPorts:
         - ports:
             - port: "3306"
               protocol: TCP
-
 ---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
   name: database-rules
-  namespace: web-tier
+  namespace: data-tier # CORRECTED: Must be deployed in the same namespace as the DB
 spec:
   description: "Database isolation rules"
   endpointSelector:
     matchLabels:
       app: mariadb
   ingress:
-    # Only accept database traffic coming from backend API
+    # Cross the namespace boundary to accept traffic from the backend in web-tier
     - fromEndpoints:
         - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": web-tier
             app: backend
       toPorts:
         - ports:
             - port: "3306"
               protocol: TCP
-  # Egress is omitted here, meaning MariaDB cannot initiate connections to anyone!
