@@ -4,3 +4,87 @@ metadata:
   name: cilium
 spec:
   controller: cilium.io/ingress-controller
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: web-tier
+spec:
+  description: "Zero-Trust: Deny all ingress and egress traffic by default"
+  endpointSelector: {} # An empty selector matches ALL pods in the namespace
+  ingress:
+    - {}
+  egress:
+    - {}
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-external-to-frontend
+  namespace: web-tier
+spec:
+  endpointSelector:
+    matchLabels:
+      app: web # Targets your frontend pod
+  ingress:
+    - fromEntities:
+        - world # Allows traffic originating outside the cluster (your laptop host)
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: web-tier
+spec:
+  endpointSelector:
+    matchLabels:
+      app: backend # Targets your Backend API pod
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: web # Only allows traffic if it carries the app=web identity
+      toPorts:
+        - ports:
+            - port: "8080" # Assuming your API listens on 8080
+              protocol: TCP
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-to-mariadb
+  namespace: web-tier
+spec:
+  endpointSelector:
+    matchLabels:
+      app: mariadb # Targets your Database pod
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: backend # Only allows traffic if it comes from the API tier
+      toPorts:
+        - ports:
+            - port: "3306" # Standard MariaDB/MySQL port
+              protocol: TCP
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-backend-to-mariadb
+  namespace: web-tier
+spec:
+  endpointSelector:
+    matchLabels:
+      app: mariadb # Targets your Database pod
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: backend # Only allows traffic if it comes from the API tier
+      toPorts:
+        - ports:
+            - port: "3306" # Standard MariaDB/MySQL port
+              protocol: TCP
