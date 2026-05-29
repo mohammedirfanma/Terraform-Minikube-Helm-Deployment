@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, include
 from . import views
 
 urlpatterns = [
@@ -7,4 +7,5 @@ urlpatterns = [
     path('articles/', views.list_articles),
     path('comment/<int:article_id>/', views.add_comment),
     path('comments/<int:article_id>/', views.get_comments),
+    path('', include('django_prometheus.urls')),
 ]
